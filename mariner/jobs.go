@@ -32,7 +32,7 @@ type JobInfo struct {
 
 // DispatchWorkflowJob runs a workflow provided in mariner api request
 // TODO - decide on an approach to error handling, and apply it uniformly
-func dispatchWorkflowJob(workflowRequest *WorkflowRequest) (err error) {
+func dispatchWorkflowJob(workflowRequest *WorkflowRequest, conf *MarinerConfig) (err error) {
 	// get connection to cluster in order to dispatch jobs
 	_, jobsClient, _, _, err := k8sClient(k8sJobAPI)
 	if err != nil {
@@ -41,7 +41,7 @@ func dispatchWorkflowJob(workflowRequest *WorkflowRequest) (err error) {
 
 	// create the workflow job spec (i.e., mariner-engine job spec)
 	// `runID` is the jobName of the engine job
-	jobSpec, err := workflowJob(workflowRequest)
+	jobSpec, err := workflowJob(workflowRequest, conf)
 	if err != nil {
 		return fmt.Errorf("failed to create workflow job spec: %v", err)
 	}
