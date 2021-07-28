@@ -23,15 +23,15 @@ import (
 ////// marinerEngine -> //////
 
 // returns fully populated job spec for the workflow job (i.e, an instance of mariner-engine)
-func workflowJob(workflowRequest *WorkflowRequest) (*batchv1.Job, error) {
+func workflowJob(workflowRequest *WorkflowRequest, conf *MarinerConfig) (*batchv1.Job, error) {
 
 	// get job spec all populated except for pod volumes and containers
-	workflowJob := jobSpec(marinerEngine, workflowRequest.UserID, workflowRequest.JobName)
+	workflowJob := jobSpec(conf, marinerEngine, workflowRequest.UserID, workflowRequest.JobName)
 
 	// fill in the rest of the spec
 	workflowJob.Spec.Template.Spec.Volumes = engineVolumes()
 
-	workflowJob.Spec.Template.Spec.Containers = engineContainers(workflowRequest)
+	workflowJob.Spec.Template.Spec.Containers = engineContainers(workflowRequest, conf)
 	return workflowJob, nil
 }
 
@@ -42,22 +42,22 @@ func engineVolumes() (volumes []k8sv1.Volume) {
 	return volumes
 }
 
-func engineContainers(workflowRequest *WorkflowRequest) (containers []k8sv1.Container) {
-	engine := engineContainer(workflowRequest)
+func engineContainers(workflowRequest *WorkflowRequest, conf *MarinerConfig) (containers []k8sv1.Container) {
+	engine := engineContainer(workflowRequest, conf)
 	containers = []k8sv1.Container{*engine}
 	return containers
 }
 
-func engineContainer(workflowRequest *WorkflowRequest) (container *k8sv1.Container) {
-	container = baseContainer(&Config.Containers.Engine, marinerEngine)
-	container.Env = engineEnv(workflowRequest)
+func engineContainer(workflowRequest *WorkflowRequest, conf *MarinerConfig) (container *k8sv1.Container) {
+	container = baseContainer(&conf.Containers.Engine, marinerEngine)
+	container.Env = engineEnv(workflowRequest, &conf.Secrets)
 	return container
 }
 
 // given a manifest, returns the complete gen3fuse container spec for k8s podSpec
-func gen3fuseContainer(manifest *Manifest, component string, runID string) (container *k8sv1.Container) {
-	container = baseContainer(&Config.Containers.Gen3fuse, gen3fuse)
-	container.Lifecycle = gen3fusePrestopHook
+func gen3fuseContainer(manifest *Manifest, fuseContainer *Container, component string, runID string) (container *k8sv1.Container) {
+	container = baseContainer(fuseContainer, gen3fuse)
+	container.Lifecycle = gen3fusePrestopHook(fuseContainer)
 	container.Env = gen3fuseEnv(manifest, component, runID)
 	return container
 }
@@ -111,7 +111,7 @@ func gen3fuseEnv(m *Manifest, component string, runID string) (env []k8sv1.EnvVa
 3. engine reads  s3://workflow-engine-garvin/$USER_ID/workflowRuns/$RUN_ID/request.json
 */
 
-func engineEnv(r *WorkflowRequest) (env []k8sv1.EnvVar) {
+func engineEnv(r *WorkflowRequest, secrets *Secrets) (env []k8sv1.EnvVar) {
 	env = []k8sv1.EnvVar{
 		{
 			Name:  "GEN3_NAMESPACE",
@@ -127,7 +127,7 @@ func engineEnv(r *WorkflowRequest) (env []k8sv1.EnvVar) {
 		},
 		{
 			Name:      "AWSCREDS",
-			ValueFrom: envVarAWSUserCreds,
+			ValueFrom: envVarAWSUserCreds(secrets),
 		},
 	}
 	return env
@@ -150,7 +150,7 @@ type TokenUser struct {
 func (engine *K8sEngine) taskJob(tool *Tool) (job *batchv1.Job, err error) {
 	engine.infof("begin load job spec for task: %v", tool.Task.Root.ID)
 	tool.JobName = createJobName()
-	job = jobSpec(marinerTask, engine.UserID, tool.JobName)
+	job = jobSpec(engine.Config, marinerTask, engine.UserID, tool.JobName)
 
 	if engine.Log.Request.ServiceAccountName != "" {
 		job.Spec.Template.Spec.ServiceAccountName = engine.Log.Request.ServiceAccountName
@@ -169,12 +169,12 @@ func (engine *K8sEngine) taskJob(tool *Tool) (job *batchv1.Job, err error) {
 
 func (engine *K8sEngine) taskContainers(tool *Tool) (containers []k8sv1.Container, err error) {
 	engine.infof("begin load container spec for tool: %v", tool.Task.Root.ID)
-	task, err := tool.taskContainer()
+	task, err := tool.taskContainer(engine.Config)
 	if err != nil {
 		return nil, engine.errorf("failed to load task main container: %v; error: %v", tool.Task.Root.ID, err)
 	}
 	s3sidecar := engine.s3SidecarContainer(tool)
-	gen3fuse := gen3fuseContainer(engine.Manifest, marinerTask, engine.RunID)
+	gen3fuse := gen3fuseContainer(engine.Manifest, &engine.Config.Containers.Gen3fuse, marinerTask, engine.RunID)
 	workingDir := k8sv1.EnvVar{
 		Name:  "TOOL_WORKING_DIR",
 		Value: tool.WorkingDir, // #runtime - per CWL spec, this envVar in task should be "HOME"
@@ -189,22 +189,22 @@ func (engine *K8sEngine) taskContainers(tool *Tool) (containers []k8sv1.Containe
 // for marinerTask job
 func (engine *K8sEngine) s3SidecarContainer(tool *Tool) (container *k8sv1.Container) {
 	engine.infof("load s3 sidecar container spec for task: %v", tool.Task.Root.ID)
-	container = baseContainer(&Config.Containers.S3sidecar, s3sidecar)
+	container = baseContainer(&engine.Config.Containers.S3sidecar, s3sidecar)
 	container.Env = engine.s3SidecarEnv(tool)
 	return container
 }
 
 // taskContainer sets up and returns a k8s container for the tool task.
-func (tool *Tool) taskContainer() (container *k8sv1.Container, err error) {
+func (tool *Tool) taskContainer(conf *MarinerConfig) (container *k8sv1.Container, err error) {
 	tool.Task.infof("begin load main container spec")
-	conf := Config.Containers.Task
+	taskConf := conf.Containers.Task
 	container = new(k8sv1.Container)
-	container.Name = conf.Name
+	container.Name = taskConf.Name
 	container.VolumeMounts = volumeMounts(marinerTask)
-	container.ImagePullPolicy = conf.pullPolicy()
+	container.ImagePullPolicy = taskConf.pullPolicy()
 	container.Image = tool.dockerImage()
 	tool.Task.Log.ContainerImage = container.Image
-	if container.Resources, err = tool.resourceReqs(); err != nil {
+	if container.Resources, err = tool.resourceReqs(conf); err != nil {
 		return nil, tool.Task.errorf("failed to load cpu/mem info: %v", err)
 	}
 	container.Args = tool.containerArgs()
@@ -275,7 +275,7 @@ func (engine *K8sEngine) s3SidecarEnv(tool *Tool) (env []k8sv1.EnvVar) {
 	env = []k8sv1.EnvVar{
 		{
 			Name:      "AWSCREDS",
-			ValueFrom: envVarAWSUserCreds,
+			ValueFrom: envVarAWSUserCreds(&engine.Config.Secrets),
 		},
 		{
 			Name:  userIDEnvVar,
@@ -303,11 +303,11 @@ func (engine *K8sEngine) s3SidecarEnv(tool *Tool) (env []k8sv1.EnvVar) {
 		},
 		{
 			Name:  "S3_BUCKET_NAME",
-			Value: Config.Storage.S3.Name,
+			Value: engine.Config.Storage.S3.Name,
 		},
 		{
 			Name:  "S3_REGION",
-			Value: Config.Storage.S3.Region,
+			Value: engine.Config.Storage.S3.Region,
 		},
 		{
 			Name:  "CONFORMANCE_INPUT_S3_PREFIX",
@@ -384,13 +384,13 @@ func (tool *Tool) cltBash() string {
 // for k8s resource info see: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/
 //
 // NOTE: presently only supporting req's for cpu cores and RAM - need to implement outdir and tmpdir and whatever other fields are allowed
-func (tool *Tool) resourceReqs() (k8sv1.ResourceRequirements, error) {
+func (tool *Tool) resourceReqs(conf *MarinerConfig) (k8sv1.ResourceRequirements, error) {
 	tool.Task.infof("begin handle resource requirements")
 	var cpuReq, cpuLim int64
 	var memReq, memLim int64
 
 	// start with default settings
-	resourceReqs := Config.Containers.Task.resourceRequirements()
+	resourceReqs := conf.Containers.Task.resourceRequirements()
 
 	// discern user specified settings
 	requests, limits := make(k8sv1.ResourceList), make(k8sv1.ResourceList)
@@ -542,9 +542,9 @@ func (engine *K8sEngine) createPVC(claimName string) error {
 }
 
 // returns marinerEngine/marinerTask job spec with all fields populated EXCEPT volumes and containers
-func jobSpec(component string, userID string, jobName string) (job *batchv1.Job) {
+func jobSpec(conf *MarinerConfig, component string, userID string, jobName string) (job *batchv1.Job) {
 
-	jobConfig := Config.jobConfig(component)
+	jobConfig := conf.jobConfig(component)
 	job = new(batchv1.Job)
 	job.Kind, job.APIVersion = "Job", "v1"
 	// meta for pod and job objects are same
