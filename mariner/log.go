@@ -39,7 +39,7 @@ func (server *Server) listRuns(userID string) ([]string, error) {
 	svc := s3.New(sess)
 	prefix := fmt.Sprintf(pathToUserRunsf, userID)
 	query := &s3.ListObjectsV2Input{
-		Bucket:    aws.String(Config.Storage.S3.Name),
+		Bucket:    aws.String(server.Config.Storage.S3.Name),
 		Prefix:    aws.String(prefix),
 		Delimiter: aws.String("/"),
 	}
@@ -73,7 +73,7 @@ func (server *Server) fetchMainLog(userID, runID string) (*MainLog, error) {
 
 	// Write the contents of S3 Object to the buffer
 	s3Obj := &s3.GetObjectInput{
-		Bucket: aws.String(Config.Storage.S3.Name),
+		Bucket: aws.String(server.Config.Storage.S3.Name),
 		Key:    aws.String(objKey),
 	}
 	_, err = downloader.Download(buf, s3Obj)
@@ -138,7 +138,7 @@ func (engine *K8sEngine) writeLogToS3() error {
 	objKey := fmt.Sprintf(pathToUserRunLogf, engine.UserID, engine.RunID)
 
 	_, err = uploader.Upload(&s3manager.UploadInput{
-		Bucket: aws.String(Config.Storage.S3.Name),
+		Bucket: aws.String(engine.Config.Storage.S3.Name),
 		Key:    aws.String(objKey),
 		Body:   bytes.NewReader(j),
 	})
@@ -169,7 +169,7 @@ func (server *Server) writeLog(mainLog *MainLog, userID string, runID string) er
 
 	// Upload the file to S3.
 	_, err = uploader.Upload(&s3manager.UploadInput{
-		Bucket: aws.String(Config.Storage.S3.Name),
+		Bucket: aws.String(server.Config.Storage.S3.Name),
 		Key:    aws.String(objKey),
 		Body:   bytes.NewReader(j),
 	})
