@@ -40,6 +40,7 @@ type K8sEngine struct {
 	Manifest        *Manifest           // to pass the manifest to the gen3fuse container of each task pod
 	Log             *MainLog            //
 	KeepFiles       map[string]bool     // all the paths to not delete during basic file cleanup
+	Config          *MarinerConfig
 }
 
 // Tool represents a leaf in the graph of a workflow
@@ -85,7 +86,9 @@ type ToolS3Input struct {
 
 // Engine runs an instance of the mariner engine job
 func Engine(runID string) (err error) {
-	engine := engine(runID)
+	config := loadConfig(marinerConfigPath)
+
+	engine := engine(runID, config)
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -142,7 +145,7 @@ func (engine *K8sEngine) fetchRequestFromS3() (*WorkflowRequest, error) {
 }
 
 // instantiate a K8sEngine object
-func engine(runID string) *K8sEngine {
+func engine(runID string, conf *MarinerConfig) *K8sEngine {
 	e := &K8sEngine{
 		FinishedProcs:   make(map[string]bool),
 		UnfinishedProcs: make(map[string]bool),
@@ -150,10 +153,11 @@ func engine(runID string) *K8sEngine {
 		RunID:           runID,
 		UserID:          os.Getenv(userIDEnvVar),
 		Log:             mainLog(fmt.Sprintf(pathToLogf, runID)),
+		Config:          conf,
 	}
 
 	fm := &S3FileManager{}
-	if err := fm.setup(); err != nil {
+	if err := fm.setup(&conf.Storage); err != nil {
 		// fixme: log
 		fmt.Println("FAILED TO SETUP S3FILEMANAGER")
 	}
