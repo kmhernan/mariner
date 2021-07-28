@@ -3,6 +3,7 @@ module github.com/uc-cdis/mariner
 go 1.15
 
 require (
+	bou.ke/monkey v1.0.2 // indirect
 	github.com/aws/aws-sdk-go v1.36.33
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
@@ -10,6 +11,7 @@ require (
 	github.com/otiai10/mint v1.3.2 // indirect
 	github.com/otiai10/yaml2json v0.0.0-20170911100845-ddc967a37458 // indirect
 	github.com/robertkrimen/otto v0.0.0-20200922221731-ef014fd054ac
+	github.com/stretchr/testify v1.7.0 // indirect
 	github.com/uc-cdis/cwl.go v0.0.0-20200924221323-7dcc21a0f010
 	github.com/uc-cdis/go-authutils v0.0.0-20201026165355-17b5f353bf4f
 	gopkg.in/sourcemap.v1 v1.0.5 // indirect
