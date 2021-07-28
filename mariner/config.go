@@ -14,6 +14,9 @@ import (
 
 // define any needed/useful vars and consts here
 const (
+	// default config path
+	marinerConfigPath = "/mariner-config/mariner-config.json"
+
 	// mariner components
 	marinerTask   = "task"
 	marinerEngine = "engine"
@@ -118,13 +121,16 @@ var (
 )
 
 // for mounting aws-user-creds secret to s3sidecar
-var envVarAWSUserCreds = &k8sv1.EnvVarSource{
-	SecretKeyRef: &k8sv1.SecretKeySelector{
-		LocalObjectReference: k8sv1.LocalObjectReference{
-			Name: Config.Secrets.AWSUserCreds.Name,
+func envVarAWSUserCreds(secrets *Secrets) (env *k8sv1.EnvVarSource) {
+	env = &k8sv1.EnvVarSource{
+		SecretKeyRef: &k8sv1.SecretKeySelector{
+			LocalObjectReference: k8sv1.LocalObjectReference{
+				Name: secrets.AWSUserCreds.Name,
+			},
+			Key: secrets.AWSUserCreds.Key,
 		},
-		Key: Config.Secrets.AWSUserCreds.Key,
-	},
+	}
+	return env
 }
 
 var envVarHostname = &k8sv1.EnvVarSource{
@@ -138,12 +144,15 @@ var envVarHostname = &k8sv1.EnvVarSource{
 }
 
 // could put in manifest
-var gen3fusePrestopHook = &k8sv1.Lifecycle{
-	PreStop: &k8sv1.Handler{
-		Exec: &k8sv1.ExecAction{
-			Command: Config.Containers.Gen3fuse.Lifecycle.Prestop,
+func gen3fusePrestopHook(container *Container) (lifecycle *k8sv1.Lifecycle) {
+	lifecycle = &k8sv1.Lifecycle{
+		PreStop: &k8sv1.Handler{
+			Exec: &k8sv1.ExecAction{
+				Command: container.Lifecycle.Prestop,
+			},
 		},
-	},
+	}
+	return lifecycle
 }
 
 // only using jupyter asg for now - will have workflow asg in production
