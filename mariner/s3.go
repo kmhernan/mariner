@@ -34,7 +34,7 @@ type S3FileManager struct {
 	MaxConcurrent int
 }
 
-func loadAWSConfig() (*aws.Config, error) {
+func loadAWSConfig(s3config *Storage) (*aws.Config, error) {
 	secret := []byte(os.Getenv(awsCredsEnvVar))
 	creds := &awsCredentials{}
 	err := json.Unmarshal(secret, creds)
@@ -43,7 +43,7 @@ func loadAWSConfig() (*aws.Config, error) {
 	}
 	credsConfig := credentials.NewStaticCredentials(creds.ID, creds.Secret, "")
 	awsConfig := &aws.Config{
-		Region:      aws.String(Config.Storage.S3.Region),
+		Region:      aws.String(s3config.S3.Region),
 		Credentials: credsConfig,
 	}
 	return awsConfig, nil
@@ -54,12 +54,12 @@ type awsCredentials struct {
 	Secret string `json:"secret"`
 }
 
-func (fm *S3FileManager) setup() (err error) {
-	fm.AWSConfig, err = loadAWSConfig()
+func (fm *S3FileManager) setup(s3config *Storage) (err error) {
+	fm.AWSConfig, err = loadAWSConfig(s3config)
 	if err != nil {
 		return err
 	}
-	fm.S3BucketName = Config.Storage.S3.Name
+	fm.S3BucketName = s3config.S3.Name
 	fm.MaxConcurrent = maxConcurrent
 	return nil
 }
