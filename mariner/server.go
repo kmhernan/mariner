@@ -55,6 +55,7 @@ type Server struct {
 	jwtApp        JWTDecoder
 	logger        *LogHandler
 	S3FileManager *S3FileManager
+	Config        *MarinerConfig
 }
 
 // see Arborist's logging.go
@@ -116,11 +117,12 @@ type ArboristResponse struct {
 // RunServer inits the mariner server
 func RunServer() {
 	go deleteCompletedJobs()
-	runServer()
+	config := loadConfig(marinerConfigPath)
+	runServer(config)
 }
 
 // runServer sets up and runs the mariner server
-func runServer() {
+func runServer(config *MarinerConfig) {
 	jwkEndpointEnv := os.Getenv("JWKS_ENDPOINT")
 	port := flag.Uint("port", 80, "port on which to expose the API")
 	jwkEndpoint := flag.String(
@@ -132,8 +134,8 @@ func runServer() {
 	logger := log.New(os.Stdout, "", logFlags)
 	jwtApp := authutils.NewJWTApplication(*jwkEndpoint)
 	fm := &S3FileManager{}
-	fm.setup()
-	server := server().withLogger(logger).withJWTApp(jwtApp).withS3FileManager(fm)
+	fm.setup(&config.Storage)
+	server := server(config).withLogger(logger).withJWTApp(jwtApp).withS3FileManager(fm)
 	router := server.makeRouter(os.Stdout)
 	addr := fmt.Sprintf(":%d", *port)
 	httpLogger := log.New(os.Stdout, "", log.LstdFlags)
@@ -164,8 +166,10 @@ func (server *Server) withLogger(logger *log.Logger) *Server {
 	return server
 }
 
-func server() (server *Server) {
-	return &Server{}
+func server(config *MarinerConfig) (server *Server) {
+	svr := &Server{}
+	svr.Config = config
+	return svr
 }
 
 // first just getting the endpoints to work, then will make nice and WES-ish
@@ -389,7 +393,7 @@ func (server *Server) handleRunsPOST(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = dispatchWorkflowJob(workflowRequest)
+	err = dispatchWorkflowJob(workflowRequest, server.Config)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
